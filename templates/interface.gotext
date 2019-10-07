@@ -1,0 +1,35 @@
+// Auto generated code. DO NOT EDIT.
+package {{.Package}}
+
+{{range $structName, $struct := .Structs -}}
+type {{.RepositoryName}} interface {
+    Create({{$struct.VarName}} *{{.StructName}}) ({{.PrimaryKey.Type}}, error)
+    Update({{$struct.VarName}} *{{.StructName}}) error
+
+    {{range $i, $field := .Fields -}}
+    {{if $field.Tag.IsPrimary -}}
+    FindBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) (*{{$struct.StructName}}, error)
+    {{if gt (len $struct.Active.SQLCondition) 0 -}}
+    FindRawBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) (*{{$struct.StructName}}, error)
+    {{end -}}
+    {{end -}}
+    {{if $field.Tag.IsSearchable -}}
+    FindBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) ([]*{{$struct.StructName}}, error)
+    {{end -}}
+    {{if and $field.IsPointer (eq $field.Type "time.Time") -}}
+        Mark{{$field.Name}}({{$struct.PrimaryKey.VarName}} {{$struct.PrimaryKey.Type}}) error
+    {{end -}}
+    {{end -}}
+    {{range $groupName, $groupFields := .SearchGroups -}}
+    FindBy{{$groupName}}({{range $i, $field := $groupFields -}}
+    {{if gt $i 0}}, {{end -}}
+    {{$field.VarName}} {{$field.Type -}}
+    {{end}}) ([]*{{$struct.StructName -}}, error)
+    {{end}}
+}
+
+type {{.RepositoryName}}Creator func(Transaction) ({{.RepositoryName}}, error)
+
+{{end}}
+
+

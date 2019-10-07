@@ -1,0 +1,157 @@
+// Auto generated code. DO NOT EDIT.
+package mocks
+
+import (
+	"errors"
+    "sync"
+)
+
+{{range $structName, $struct := .Structs -}}
+
+// {{.RepositoryName}}Mock =======================================================
+type {{.RepositoryName}}Mock struct {
+    mux     sync.Mutex
+    counter int
+	data    map[{{.PrimaryKey.Type}}]*{{$.Package}}.{{.StructName}}
+}
+
+func (ar *{{.RepositoryName}}Mock) nextKey() {{.PrimaryKey.Type}} {
+    ar.counter++
+    {{if eq .PrimaryKey.Type "string" -}}
+        return strconv.Itoa(ar.counter)
+    {{else -}}
+        {{if eq .PrimaryKey.Type "int" -}}
+            return ar.counter
+        {{else -}}
+            return {{.PrimaryKey.Type}}(ar.counter)
+        {{end -}}
+    {{end -}}
+}
+
+var {{$struct.VarName}}Repository *{{.RepositoryName}}Mock
+
+func New{{.RepositoryName}}Mock(_ {{$.Package}}.Transaction) ({{$.Package}}.{{.RepositoryName}}, error) {
+    if {{$struct.VarName}}Repository == nil {
+        {{$struct.VarName}}Repository = &{{.RepositoryName}}Mock{
+    		data: make(map[{{.PrimaryKey.Type}}]*{{$.Package}}.{{.StructName}}),
+    	}
+    }
+	return {{$struct.VarName}}Repository, nil
+}
+
+func Clear{{.RepositoryName}}Mock() {
+    {{$struct.VarName}}Repository = nil
+}
+
+func (ar {{.RepositoryName}}Mock) copy({{$struct.VarName}} *{{$.Package}}.{{.StructName}}) *{{$.Package}}.{{.StructName}} {
+	newItem := &{{$.Package}}.{{.StructName}}{
+        {{range $i, $field := .Fields -}}
+            {{$field.Name}}: {{$struct.VarName}}.{{$field.Name}},
+        {{end}}
+    }
+    return newItem
+}
+
+func (ar *{{.RepositoryName}}Mock) Create({{$struct.VarName}} *{{$.Package}}.{{.StructName}}) ({{.PrimaryKey.Type}}, error) {
+    ar.mux.Lock()
+    defer ar.mux.Unlock()
+
+    newItem := ar.copy({{$struct.VarName}})
+
+	if {{$struct.VarName}}.{{.PrimaryKey.Name}} == nil {
+	    newKey := ar.nextKey()
+    	newItem.{{.PrimaryKey.Name}} = &newKey
+    }
+
+    if item, ok := ar.data[*newItem.{{.PrimaryKey.Name}}]; ok {
+        return *item.{{.PrimaryKey.Name}}, errors.New("record already exists")
+    }
+
+    ar.data[*newItem.{{.PrimaryKey.Name}}] = newItem
+	return *newItem.{{.PrimaryKey.Name}}, nil
+}
+
+func (ar *{{.RepositoryName}}Mock) Update({{$struct.VarName}} *{{$.Package}}.{{.StructName}}) error {
+    ar.mux.Lock()
+    defer ar.mux.Unlock()
+    if _, ok := ar.data[*{{$struct.VarName}}.{{.PrimaryKey.Name}}];!ok {
+        return errors.New("record not found")
+    }
+	ar.data[*{{$struct.VarName}}.{{.PrimaryKey.Name}}] = {{$struct.VarName}}
+	return nil
+}
+
+{{range $i, $field := .Fields -}}
+
+{{if $field.Tag.IsPrimary -}}
+{{if gt (len $struct.Active.SQLCondition) 0 -}}
+func (ar *{{$struct.RepositoryName}}Mock) FindRawBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) (*{{$.Package}}.{{$struct.StructName}}, error) {
+     ar.mux.Lock()
+     defer ar.mux.Unlock()
+	 if item, ok := ar.data[{{$field.VarName}}]; ok {
+        return ar.copy(item), nil
+     }
+     return nil, nil
+}
+{{end}}
+
+func (ar *{{$struct.RepositoryName}}Mock) FindBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) (*{{$.Package}}.{{$struct.StructName}}, error) {
+     ar.mux.Lock()
+     defer ar.mux.Unlock()
+	 if item, ok := ar.data[{{$field.VarName}}]; ok {{if gt (len $struct.Active.MethodName) 0 -}}&& item.{{$struct.Active.MethodName -}}(){{end -}} {
+	    return ar.copy(item), nil
+     }
+     return nil, nil
+}
+{{end -}}
+
+{{if $field.Tag.IsSearchable -}}
+func (ar *{{$struct.RepositoryName}}Mock) FindBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) ([]*{{$.Package}}.{{$struct.StructName}}, error) {
+    ar.mux.Lock()
+    defer ar.mux.Unlock()
+    var filtered []*{{$.Package}}.{{$struct.StructName}}
+
+    for _, item := range ar.data {
+	    if {{if $field.IsPointer}} item.{{$field.Name}}!=nil && {{end -}}
+	        {{if $field.IsPointer}}*{{end}}item.{{$field.Name}} == {{$field.VarName -}} {{if gt (len $struct.Active.MethodName) 0}} && item.{{$struct.Active.MethodName -}}(){{end -}}{
+            filtered = append(filtered, ar.copy(item))
+        }
+    }
+    return filtered, nil
+}
+{{end -}}
+
+{{if and $field.IsPointer (eq $field.Type "time.Time") -}}
+func (ar *{{$struct.RepositoryName}}Mock) Mark{{$field.Name}}({{$struct.PrimaryKey.VarName}} {{$struct.PrimaryKey.Type}}) error {
+    ar.mux.Lock()
+    defer ar.mux.Unlock()
+    if item, ok := ar.data[{{$struct.PrimaryKey.VarName}}];ok {
+        now := time.Now()
+        item.{{$field.Name}} = &now
+    }
+    return nil
+}
+{{end}}
+{{end -}}
+
+{{range $groupName, $groupFields := .SearchGroups -}}
+func (ar *{{$struct.RepositoryName}}Mock) FindBy{{$groupName}}({{range $i, $field := $groupFields -}}
+	{{if gt $i 0}}, {{end -}}
+	{{$field.VarName}} {{$field.Type -}}
+{{end -}}) ([]*{{$.Package}}.{{$struct.StructName}}, error) {
+	ar.mux.Lock()
+    defer ar.mux.Unlock()
+    var filtered []*{{$.Package}}.{{$struct.StructName}}
+
+    for _, item := range ar.data {
+        if {{range $i, $field := $groupFields -}} {{if gt $i 0}}&&{{end}} {{if $field.IsPointer}} item.{{$field.Name}}!=nil && {{end}}
+         {{if $field.IsPointer}}*{{end}}item.{{$field.Name}} == {{$field.VarName}} {{end -}}
+        {{if gt (len $struct.Active.MethodName) 0 -}}&& item.{{$struct.Active.MethodName -}}(){{end -}}{
+            filtered = append(filtered, item)
+        }
+    }
+    return filtered, nil
+}
+{{end}}
+
+{{end}}
