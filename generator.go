@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
 )
@@ -125,7 +126,7 @@ func newStruct(jsonStr string, currType *ast.TypeSpec, currStruct *ast.StructTyp
 	return entityStruct
 }
 
-func createFiles(interfaceFile, implementFile, mockFile string, node *ast.File, api *entityApi) {
+func createFiles(homeDir string, interfaceFile, implementFile, mockFile string, node *ast.File, api *entityApi) {
 	out, _ := os.Create(interfaceFile)
 	defer out.Close()
 
@@ -146,19 +147,19 @@ func createFiles(interfaceFile, implementFile, mockFile string, node *ast.File, 
 		},
 	}
 
-	t := template.Must(template.New("implementation.gotext").Funcs(funcMap).ParseFiles("templates/implementation.gotext"))
+	t := template.Must(template.New("implementation.gotext").Funcs(funcMap).ParseFiles(homeDir + "/templates/implementation.gotext"))
 	err := t.Execute(outImpl, api)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	t = template.Must(template.New("interface.gotext").Funcs(funcMap).ParseFiles("templates/interface.gotext"))
+	t = template.Must(template.New("interface.gotext").Funcs(funcMap).ParseFiles(homeDir + "templates/interface.gotext"))
 	err = t.Execute(out, api)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	t = template.Must(template.New("mock.gotext").Funcs(funcMap).ParseFiles("templates/mock.gotext"))
+	t = template.Must(template.New("mock.gotext").Funcs(funcMap).ParseFiles(homeDir + "templates/mock.gotext"))
 	err = t.Execute(outMock, api)
 	if err != nil {
 		log.Fatal(err)
@@ -166,7 +167,17 @@ func createFiles(interfaceFile, implementFile, mockFile string, node *ast.File, 
 }
 
 func main() {
+	log.SetFlags(log.Lshortfile)
 	api := newApi()
+	if len(os.Args) != 5 {
+		log.Fatal("Usage: generator [source file] [interface file] [implementation file] [mock implementation file]")
+	}
+
+	homeDir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	sourceFile := os.Args[1]
 	interfaceFile := os.Args[2]
 	implementFile := os.Args[3]
@@ -178,5 +189,5 @@ func main() {
 		log.Fatal(err)
 	}
 
-	createFiles(interfaceFile, implementFile, mockFile, node, api)
+	createFiles(homeDir, interfaceFile, implementFile, mockFile, node, api)
 }

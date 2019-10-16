@@ -38,7 +38,7 @@ func (a Account) IsActive() bool {
 ### Usage
 
 ```bash
-    build -o generator
+    go build -o generator
     ./generator [source file] [interface file] [implementation file] [mock implementation file]
     goimports -w [implementation file] # format code and manage import section
 ```
