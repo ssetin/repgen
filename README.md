@@ -27,8 +27,8 @@ package mypkg
 type Unit struct {
 	Id           *int       `db:"field=id,primary"`
 	Type         string     `db:"field=type,searchable"`
-	Name         string     `db:"field=type,searchGroup=NameAndColor"`
-	Color        string     `db:"field=email,searchGroup=NameAndColor"`
+	Name         string     `db:"field=name,searchGroup=NameAndColor"`
+	Color        string     `db:"field=color,searchGroup=NameAndColor"`
 	Deleted      *time.Time `db:"field=deleted"`
     
 	Details []*Detail  `db:"foreign=detailId"`
@@ -43,7 +43,7 @@ func (a Unit) IsActive() bool {
 type Detail struct {
 	Id            *int       `db:"field=detailId,primary"`
 	Type        string       `db:"field=type,searchable"`
-	Description string       `db:"field=name"`
+	Description string       `db:"field=description"`
 }
 
 ```
