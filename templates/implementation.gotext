@@ -3,193 +3,433 @@ package db
 
 {{range $structName, $struct := .Structs -}}
 
-// {{.RepositoryName}} =======================================================
-type {{.RepositoryName}} struct {
+	// {{.RepositoryName}} =======================================================
+	type {{.RepositoryName}} struct {
 	tx  *sql.Tx
-}
+	}
 
-func New{{.RepositoryName}}(tx {{$.Package}}.Transaction) ({{$.Package}}.{{.RepositoryName}}, error) {
+	func New{{.RepositoryName}}(tx {{$.Package}}.Transaction) ({{$.Package}}.{{.RepositoryName}}, error) {
 	new := &{{.RepositoryName}}{
-		tx: tx.(*sql.Tx),
+	tx: tx.(*sql.Tx),
 	}
 	return new, nil
-}
+	}
 
-func (ar {{.RepositoryName}}) Create({{$struct.VarName}} *{{$.Package}}.{{.StructName}}) ({{.PrimaryKey.Type}}, error) {
+	func (ar {{.RepositoryName}}) Create({{$struct.VarName}} *{{$struct.FullStructName}}) ({{.PrimaryKey.Type}}, error) {
 	var (
-		id                 {{.PrimaryKey.Type}}
-		row                *sql.Row
+	id                 {{.PrimaryKey.Type}}
+	row                *sql.Row
 	)
+	{{$fieldsCount := 0}}{{$fields := ""}}{{$paramsStr := ""}}
 
 	if {{$struct.VarName}}.{{.PrimaryKey.Name}} == nil {
-		row = ar.tx.QueryRow(`INSERT INTO {{.Table}}({{$fieldsCount := 0}}{{$fields := ""}}{{$paramsStr := "" -}}
-			{{range $i, $field := .Fields -}}
-                {{if not $field.Tag.IsPrimary -}}
-                    {{$fieldsCount = inc $fieldsCount -}}
-                    {{if gt $fieldsCount 1 -}}
-						, {{$paramsStr = cat $paramsStr ", " -}}
-						{{$fields = cat $fields ", " -}}
-					{{end -}}
-                    {{$field.Tag.DbFieldName -}}
-                    {{$paramsStr = cat $paramsStr (printf "$%d" $fieldsCount) -}}
-					{{$fields = cat $fields (printf "%s.%s" $struct.VarName $field.Name) -}}
-                    {{end -}}
-            {{end -}})
-			VALUES ({{$paramsStr}}) RETURNING {{.PrimaryKey.Tag.DbFieldName}};`,
-			{{$fields}})
+	row = ar.tx.QueryRow(`INSERT INTO {{.Table}}(
+	{{range $i, $field := .Fields -}}
+		{{if not $field.Tag.IsPrimary -}}
+			{{$fieldsCount = inc $fieldsCount -}}
+			{{if gt $fieldsCount 1 -}}
+				, {{$paramsStr = cat $paramsStr ", " -}}
+				{{$fields = cat $fields ",\n" -}}
+			{{end -}}
+			{{$field.Tag.DbFieldName -}}
+			{{$paramsStr = cat $paramsStr (printf "$%d" $fieldsCount) -}}
+			{{$fields = cat $fields (printf "%s.%s" $struct.VarName $field.Name) -}}
+		{{end -}}
+	{{end -}})
+	VALUES ({{$paramsStr}}) RETURNING {{.PrimaryKey.Tag.DbFieldName}};`,
+	{{$fields}})
 	} else {
-			row = ar.tx.QueryRow(`INSERT INTO {{.Table}}({{$fieldsCount := 0}}{{$fields := ""}}{{$paramsStr := "" -}}
-			{{range $i, $field := .Fields -}}
-                    {{$fieldsCount = inc $fieldsCount -}}
-                    {{if gt $fieldsCount 1 -}}
-						, {{$paramsStr = cat $paramsStr ", " -}}
-						{{$fields = cat $fields ", " -}}
-					{{end -}}
-                    {{$field.Tag.DbFieldName -}}
-                    {{$paramsStr = cat $paramsStr (printf "$%d" $fieldsCount) -}}
-					{{$fields = cat $fields (printf "%s.%s" $struct.VarName $field.Name) -}}
-            {{end -}}
-            )
-			VALUES ({{$paramsStr}}) RETURNING {{.PrimaryKey.Tag.DbFieldName}};`,
-			{{$fields}})
+	row = ar.tx.QueryRow(`INSERT INTO {{.Table}}({{$fieldsCount = 0}}{{$fields = ""}}{{$paramsStr = "" -}}
+	{{range $i, $field := .Fields -}}
+		{{$fieldsCount = inc $fieldsCount -}}
+		{{if gt $fieldsCount 1 -}}
+			, {{$paramsStr = cat $paramsStr ", " -}}
+			{{$fields = cat $fields ",\n " -}}
+		{{end -}}
+		{{$field.Tag.DbFieldName -}}
+		{{$paramsStr = cat $paramsStr (printf "$%d" $fieldsCount) -}}
+		{{$fields = cat $fields (printf "%s.%s" $struct.VarName $field.Name) -}}
+	{{end -}}
+	)
+	VALUES ({{$paramsStr}}) RETURNING {{.PrimaryKey.Tag.DbFieldName}};`,
+	{{$fields}})
 	}
 
 	err := row.Scan(&id)
 	if err != nil {
-		return id, err
+	return id, err
 	}
-	return id, nil
-}
 
-func (ar {{.RepositoryName}}) Update({{$struct.VarName}} *{{$.Package}}.{{.StructName}}) error {
-	_, err := ar.tx.Exec(`UPDATE {{.Table}} SET {{$fieldsCount := 0}}{{$fields := ""}}
-		{{range $i, $field := .Fields -}}
-			{{if not $field.Tag.IsPrimary}}{{$fieldsCount = inc $fieldsCount -}}
-				{{if gt $fieldsCount 1}}, {{$fields = cat $fields ", "}}{{end -}}
-				{{$field.Tag.DbFieldName}}=${{$fieldsCount -}}
-				{{$fields = cat $fields (printf "%s.%s" $struct.VarName $field.Name) -}}
+	{{if .NestedObjects -}}
+		err = ar.updateNestedObjects({{$struct.VarName}})
+		if err != nil {
+		return id, err
+		}
+	{{end}}
+
+	return id, nil
+	}
+
+	{{if .NestedObjects -}}
+		func (ar {{.RepositoryName}}) updateNestedObjects({{.VarName}} *{{$struct.FullStructName}}) error {
+		var err error
+		{{range $k, $nested := $struct.NestedObjects -}}
+			{{if $nested.ForeignKey.IsArray -}}
+				for _, item := range {{$struct.VarName}}.{{$nested.ForeignKey.Name}} {
+				_, err = ar.createOrUpdate{{$nested.Object.StructName}}(item)
+				if err != nil {
+				return err
+				}
+				}
+			{{else -}}
+				_, err = ar.createOrUpdate{{$nested.Object.StructName}}({{$struct.VarName}}.{{$nested.ForeignKey.Name}})
+				if err != nil {
+				return err
+				}
 			{{end -}}
-		{{end}}
-		WHERE {{.PrimaryKey.Tag.DbFieldName}}=${{inc $fieldsCount}};`,
-		{{$fields}}, {{$struct.VarName}}.{{.PrimaryKey.Name}})
+		{{end -}}
+		return nil
+		}
+	{{end}}
+
+	func (ar {{.RepositoryName}}) Update({{$struct.VarName}} *{{$struct.FullStructName}}) error {
+	_, err := ar.tx.Exec(`UPDATE {{.Table}} SET {{$fieldsCount = 0}}{{$fields = ""}}
+	{{range $i, $field := .Fields -}}
+		{{if not $field.Tag.IsPrimary}}{{$fieldsCount = inc $fieldsCount -}}
+		{{if gt $fieldsCount 1}}, {{$fields = cat $fields ",\n"}}{{end -}}
+		{{$field.Tag.DbFieldName}}=${{$fieldsCount -}}
+		{{$fields = cat $fields (printf "%s.%s" $struct.VarName $field.Name) -}}
+		{{end -}}
+	{{end}}
+	WHERE {{.PrimaryKey.Tag.DbFieldName}}=${{inc $fieldsCount}};`,
+	{{$fields}}, {{$struct.VarName}}.{{.PrimaryKey.Name}})
 
 	if err != nil {
-		return err
+	return err
 	}
-	return nil
-}
 
-func (ar {{.RepositoryName}}) serialize{{.StructName}}(row *sql.Row) (*{{$.Package}}.{{.StructName}}, error) {
-	res := &{{$.Package}}.{{.StructName}}{}
+	{{if .NestedObjects -}}
+		err = ar.updateNestedObjects({{$struct.VarName}})
+		if err != nil {
+		return err
+		}
+	{{end}}
+
+	return nil
+	}
+
+	func (ar {{.RepositoryName}}) serialize{{.StructName}}(row *sql.Row) (*{{$struct.FullStructName}}, error) {
+	res := &{{$struct.FullStructName}}{}
 	err := row.Scan({{range $i, $field := .Fields -}}
 		{{if gt $i 0 -}}, {{end -}}
 		&res.{{$field.Name -}}
 	{{end -}}
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
+	if err == sql.ErrNoRows {
+	return nil, nil
+	}
+	return nil, err
 	}
 	return res, nil
-}
+	}
 
-func (ar {{.RepositoryName}}) serialize{{.StructName}}s(rows *sql.Rows) ([]*{{$.Package}}.{{.StructName}}, error) {
-	res := make([]*{{$.Package}}.{{.StructName}}, 0, 2)
+	func (ar {{.RepositoryName}}) serialize{{.StructName}}s(rows *sql.Rows) ([]*{{$struct.FullStructName}}, error) {
+	res := make([]*{{$struct.FullStructName}}, 0, 2)
 	for rows.Next() {
-		el := &{{$.Package}}.{{.StructName}}{}
-		err := rows.Scan({{range $i, $field := .Fields -}}
+	el := &{{$struct.FullStructName}}{}
+	err := rows.Scan({{range $i, $field := .Fields -}}
 		{{if gt $i 0 -}}, {{end -}}
-				&el.{{$field.Name -}}
-		{{end}})
-		if err != nil {
-			return nil, err
-		}
-		res = append(res, el)
+		&el.{{$field.Name -}}
+	{{end}})
+	if err != nil {
+	return nil, err
+	}
+	res = append(res, el)
 	}
 	return res, nil
-}
+	}
 
-{{range $i, $field := .Fields -}}
+	{{range $i, $field := .Fields -}}
 
-{{if $field.Tag.IsPrimary -}}
-{{if gt (len $struct.Active.SQLCondition) 0 -}}
-func (ar {{$struct.RepositoryName}}) FindRawBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) (*{{$.Package}}.{{$struct.StructName}}, error) {
-	row := ar.tx.QueryRow(`SELECT {{range $i, $field := $struct.Fields -}}
-                    {{if gt $i 0 -}}, {{end -}}
-                    {{$field.Tag.DbFieldName -}}
-        {{end}}
-		FROM {{$struct.Table}} WHERE {{$field.Tag.DbFieldName}}=$1;`, {{$field.VarName}})
-	return ar.serialize{{$struct.StructName}}(row)
-}
-{{end}}
+		{{if $field.Tag.IsPrimary -}}
+			{{if gt (len $struct.Active.SQLCondition) 0 -}}
+				func (ar {{$struct.RepositoryName}}) FindRawBy{{$field.Name}}({{$field.VarName}} {{$field.FullType}}) (*{{$struct.FullStructName}}, error) {
+				row := ar.tx.QueryRow(`SELECT {{range $i, $field := $struct.Fields -}}
+					{{if gt $i 0 -}}, {{end -}}
+					{{$field.Tag.DbFieldName -}}
+				{{end}}
+				FROM {{$struct.Table}} WHERE {{$field.Tag.DbFieldName}}=$1;`, {{$field.VarName}})
+				return ar.serialize{{$struct.StructName}}(row)
+				}
+			{{end}}
 
-func (ar {{$struct.RepositoryName}}) FindBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) (*{{$.Package}}.{{$struct.StructName}}, error) {
-	row := ar.tx.QueryRow(`SELECT {{range $i, $field := $struct.Fields -}}
-                    {{if gt $i 0 -}}, {{end -}}
-                    {{$field.Tag.DbFieldName -}}
-        {{end}}
-		FROM {{$struct.Table}} WHERE {{if gt (len $struct.Active.SQLCondition) 0}}{{$struct.Active.SQLCondition}} and{{end}} {{$field.Tag.DbFieldName}}=$1;`, {{$field.VarName}})
-	return ar.serialize{{$struct.StructName}}(row)
-}
-{{end -}}
+			func (ar {{$struct.RepositoryName}}) FindBy{{$field.Name}}({{$field.VarName}} {{$field.FullType}}) (*{{$struct.FullStructName}}, error) {
+			row := ar.tx.QueryRow(`SELECT {{range $i, $field := $struct.Fields -}}
+				{{if gt $i 0 -}}, {{end -}}
+				{{$field.Tag.DbFieldName -}}
+			{{end}}
+			FROM {{$struct.Table}} WHERE {{if gt (len $struct.Active.SQLCondition) 0}}{{$struct.Active.SQLCondition}} and{{end}} {{$field.Tag.DbFieldName}}=$1;`, {{$field.VarName}})
+			return ar.serialize{{$struct.StructName}}(row)
+			}
+		{{end -}}
 
-{{if $field.Tag.IsSearchable -}}
-func (ar {{$struct.RepositoryName}}) FindBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) ([]*{{$.Package}}.{{$struct.StructName}}, error) {
-	rows, err := ar.tx.Query(`SELECT {{range $i, $field := $struct.Fields -}}
-                    {{if gt $i 0 -}}, {{end -}}
-                    {{$field.Tag.DbFieldName -}}
-        {{end}}
-		FROM {{$struct.Table}} WHERE {{if gt (len $struct.Active.SQLCondition) 0}}{{$struct.Active.SQLCondition}} and{{end}} {{$field.Tag.DbFieldName}}=$1;`, {{$field.VarName}})
-	if err != nil {
-		if err == sql.ErrNoRows {
+		{{- if $field.Tag.IsSearchable}}
+			func (ar {{$struct.RepositoryName}}) FindBy{{$field.Name}}({{$field.VarName}} {{$field.FullType}}) ([]*{{$struct.FullStructName}}, error) {
+			rows, err := ar.tx.Query(`SELECT {{range $i, $field := $struct.Fields -}}
+				{{if gt $i 0 -}}, {{end -}}
+				{{$field.Tag.DbFieldName -}}
+			{{end}}
+			FROM {{$struct.Table}} WHERE {{if gt (len $struct.Active.SQLCondition) 0}}{{$struct.Active.SQLCondition}} and{{end}} {{$field.Tag.DbFieldName}}=$1;`, {{$field.VarName}})
+			if err != nil {
+			if err == sql.ErrNoRows {
 			return nil, nil
+			}
+			return nil, err
+			}
+			defer rows.Close()
+			return ar.serialize{{$struct.StructName}}s(rows)
+			}
+		{{- end -}}
+
+		{{if and $field.IsPointer (eq $field.Type "time.Time") -}}
+			func (ar {{$struct.RepositoryName}}) Mark{{$field.Name}}({{$struct.PrimaryKey.VarName}} {{$struct.PrimaryKey.Type}}) error {
+			_, err := ar.tx.Exec(`UPDATE {{$struct.Table}} SET {{$field.Tag.DbFieldName}}=now() WHERE {{$struct.PrimaryKey.Tag.DbFieldName}}=$1;`, {{$struct.PrimaryKey.VarName}})
+			if err != nil {
+			return err
+			}
+			return nil
+			}
+		{{end}}
+	{{end -}}
+
+	{{range $groupName, $groupFields := .SearchGroups}}
+		func (ar {{$struct.RepositoryName}}) FindBy{{$groupName}}({{range $i, $field := $groupFields -}}
+			{{if gt $i 0}}, {{end -}}
+			{{$field.VarName}} {{$field.Type -}}
+		{{end -}}) ([]*{{$struct.FullStructName}}, error) {
+		rows, err := ar.tx.Query(`SELECT {{range $i, $field := $struct.Fields -}}
+			{{if gt $i 0}}, {{end -}}
+			{{$field.Tag.DbFieldName -}}
+		{{end}} FROM {{$struct.Table}} WHERE
+		{{if gt (len $struct.Active.SQLCondition) 0}} {{$struct.Active.SQLCondition}} and {{end -}}
+		{{range $i, $field := $groupFields -}}
+			{{if gt $i 0}} and {{end -}}
+			{{$field.Tag.DbFieldName}}={{printf "$%d" (inc $i) -}}
+		{{end -}};`, {{range $i, $field := $groupFields -}}
+			{{if gt $i 0}}, {{end -}}
+			{{$field.VarName -}}
+		{{end -}})
+		if err != nil {
+		if err == sql.ErrNoRows {
+		return nil, nil
 		}
 		return nil, err
-	}
-	defer rows.Close()
-	return ar.serialize{{$struct.StructName}}s(rows)
-}
-{{end -}}
+		}
+		defer rows.Close()
+		return ar.serialize{{$struct.StructName}}s(rows)
+		}
+	{{- end}}
 
-{{if and $field.IsPointer (eq $field.Type "time.Time") -}}
-func (ar {{$struct.RepositoryName}}) Mark{{$field.Name}}({{$struct.PrimaryKey.VarName}} {{$struct.PrimaryKey.Type}}) error {
-    _, err := ar.tx.Exec(`UPDATE {{$struct.Table}} SET {{$field.Tag.DbFieldName}}=now() WHERE {{$struct.PrimaryKey.Tag.DbFieldName}}=$1;`, {{$struct.PrimaryKey.VarName}})
-    if err != nil {
-        return err
-    }
-    return nil
-}
-{{end}}
-{{end -}}
+	{{- /* Nested objects*/ -}}
+	{{if $struct.NestedObjects}}
+		{{range $k, $nested := $struct.NestedObjects -}}
+			// Nested {{$nested.ForeignKey.Name}} =======================================================
+			func (ar {{$struct.RepositoryName}}) serialize{{$nested.Object.StructName}}(row *sql.Row) (*{{$nested.Object.FullStructName}}, error) {
+			res := &{{$nested.Object.FullStructName}}{}
+			err := row.Scan({{range $i, $field := $nested.Object.Fields -}}
+				{{if gt $i 0 -}}, {{end -}}
+				&res.{{$field.Name -}}
+			{{end -}}
+			)
+			if err != nil {
+			if err == sql.ErrNoRows {
+			return nil, nil
+			}
+			return nil, err
+			}
+			return res, nil
+			}
 
-{{range $groupName, $groupFields := .SearchGroups}}
-func (ar {{$struct.RepositoryName}}) FindBy{{$groupName}}({{range $i, $field := $groupFields -}}
-	{{if gt $i 0}}, {{end -}}
-	{{$field.VarName}} {{$field.Type -}}
-{{end -}}) ([]*{{$.Package}}.{{$struct.StructName}}, error) {
-	rows, err := ar.tx.Query(`SELECT {{range $i, $field := $struct.Fields -}}
-                    {{if gt $i 0}}, {{end -}}
-                    {{$field.Tag.DbFieldName -}}
-        {{end}} FROM {{$struct.Table}} WHERE
-			{{if gt (len $struct.Active.SQLCondition) 0}} {{$struct.Active.SQLCondition}} and {{end -}}
-            {{range $i, $field := $groupFields -}}
-			    {{if gt $i 0}} and {{end -}}
-				    {{$field.Tag.DbFieldName}}={{printf "$%d" (inc $i) -}}
-			{{end -}};`, {{range $i, $field := $groupFields -}}
-				{{if gt $i 0}}, {{end -}}
-				{{$field.VarName -}}
+			func (ar {{$struct.RepositoryName}}) serialize{{$nested.Object.StructName}}s(rows *sql.Rows) ([]*{{$nested.Object.FullStructName}}, error) {
+			res := make([]*{{$nested.Object.FullStructName}}, 0, 2)
+			for rows.Next() {
+			el := &{{$nested.Object.FullStructName}}{}
+			err := rows.Scan({{range $i, $field := $nested.Object.Fields -}}
+				{{if gt $i 0 -}}, {{end -}}
+				&el.{{$field.Name -}}
+			{{end}})
+			if err != nil {
+			return nil, err
+			}
+			res = append(res, el)
+			}
+			return res, nil
+			}
+
+			func (ar {{$struct.RepositoryName}}) createOrUpdate{{$nested.Object.StructName}}({{$nested.Object.VarName}} *{{$nested.Object.FullStructName}}) ({{$nested.Object.PrimaryKey.Type}}, error) {
+			var (
+			id {{$nested.Object.PrimaryKey.Type}}
+			row *sql.Row
+			)
+			{{$fieldsCount = 0}}{{$fields = ""}}{{$upFieldsCount := 0}}{{$paramsStr = "" -}}
+
+
+			if {{$nested.Object.VarName}}.{{$nested.Object.PrimaryKey.Name}} == nil {
+			row = ar.tx.QueryRow(`INSERT INTO {{$nested.Object.Table}}(
+			{{range $i, $field := $nested.Object.Fields -}}
+				{{if not $field.Tag.IsPrimary -}}
+					{{$fieldsCount = inc $fieldsCount -}}
+					{{if gt $fieldsCount 1 -}}
+						, {{$paramsStr = cat $paramsStr ", " -}}
+						{{$fields = cat $fields ",\n" -}}
+					{{end -}}
+					{{$field.Tag.DbFieldName -}}
+					{{$paramsStr = cat $paramsStr (printf "$%d" $fieldsCount) -}}
+					{{$fields = cat $fields (printf "%s.%s" $nested.Object.VarName $field.Name) -}}
+				{{end -}}
 			{{end -}})
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
-	}
-	defer rows.Close()
-	return ar.serialize{{$struct.StructName}}s(rows)
-}
-{{end}}
+			VALUES ({{$paramsStr}}) RETURNING {{$nested.Object.PrimaryKey.Tag.DbFieldName}};`,
+			{{$fields}})
+			} else {
+			row = ar.tx.QueryRow(`INSERT INTO {{$nested.Object.Table}}({{$fieldsCount = 0}}{{$fields = ""}}{{$paramsStr = "" -}}
+			{{range $i, $field := $nested.Object.Fields -}}
+				{{$fieldsCount = inc $fieldsCount -}}
+				{{if gt $fieldsCount 1 -}}
+					, {{$paramsStr = cat $paramsStr ", " -}}
+					{{$fields = cat $fields ",\n" -}}
+				{{end -}}
+				{{$field.Tag.DbFieldName -}}
+				{{$paramsStr = cat $paramsStr (printf "$%d" $fieldsCount) -}}
+				{{$fields = cat $fields (printf "%s.%s" $nested.Object.VarName $field.Name) -}}
+			{{end -}}
+			)
+			VALUES ({{$paramsStr}})
+			ON CONFLICT ({{$nested.Object.PrimaryKey.Tag.DbFieldName}}) DO UPDATE set
+			{{- range $j, $upField := $nested.Object.Fields -}}
+				{{if not $upField.Tag.IsPrimary}}{{$upFieldsCount = inc $upFieldsCount -}}{{if gt $upFieldsCount 1}},{{end}}
+				{{$upField.Tag.DbFieldName}}=EXCLUDED.{{$upField.Tag.DbFieldName -}}
+				{{end}}{{end}} RETURNING {{$nested.Object.PrimaryKey.Tag.DbFieldName}}`,
+			{{$fields}})
+			}
+
+			err := row.Scan(&id)
+			if err != nil {
+			return id, err
+			}
+			return id, nil
+			}
+
+			func (ar {{$struct.RepositoryName}}) update{{$nested.Object.StructName}}({{$nested.Object.VarName}} *{{$nested.Object.FullStructName}}) error {
+			_, err := ar.tx.Exec(`UPDATE {{$nested.Object.Table}} SET {{$fieldsCount := 0}}{{$fields := ""}}
+			{{range $i, $field := $nested.Object.Fields -}}
+				{{if not $field.Tag.IsPrimary}}{{$fieldsCount = inc $fieldsCount -}}
+				{{if gt $fieldsCount 1}}, {{$fields = cat $fields ",\n"}}{{end -}}
+				{{$field.Tag.DbFieldName}}=${{$fieldsCount -}}
+				{{$fields = cat $fields (printf "%s.%s" $nested.Object.VarName $field.Name) -}}
+				{{end -}}
+			{{end}}
+			WHERE {{$nested.Object.PrimaryKey.Tag.DbFieldName}}=${{inc $fieldsCount}};`,
+			{{$fields}}, {{$nested.Object.VarName}}.{{$nested.Object.PrimaryKey.Name}})
+
+			if err != nil {
+			return err
+			}
+			return nil
+			}
+
+			func (ar {{$struct.RepositoryName}}) Load{{$nested.ForeignKey.Name}}({{$struct.VarName}} *{{$struct.FullStructName}}) error {
+			{{$queryMethod:="QueryRow"}}{{$err:=""}}{{$rowVariable:="row" -}}
+			{{if $nested.ForeignKey.IsArray -}}
+				{{$queryMethod = "Query" -}}
+				{{$rowVariable = "rows" -}}
+				{{$err = ", err" -}}
+			{{end -}}
+
+			{{$rowVariable}}{{$err}} := ar.tx.{{$queryMethod}}(`SELECT {{range $i, $field := $nested.Object.Fields -}}
+				{{if gt $i 0 -}}, {{end -}}
+				{{$field.Tag.DbFieldName -}}
+			{{end}}
+			FROM {{$nested.Object.Table}} WHERE {{$nested.ForeignKey.Tag.DbFieldName}}=$1;`, {{$struct.VarName}}.{{$struct.PrimaryKey.Name}})
+
+			{{if $nested.ForeignKey.IsArray -}}
+				if err != nil {
+				if err == sql.ErrNoRows {
+				return nil
+				}
+				return err
+				}
+				defer rows.Close()
+				obj, err := ar.serialize{{$nested.Object.StructName}}s({{$rowVariable}})
+			{{else -}}
+				obj, err := ar.serialize{{$nested.Object.StructName}}({{$rowVariable}})
+			{{end -}}
+
+			if err != nil {
+			return err
+			}
+			{{$struct.VarName}}.{{$nested.ForeignKey.Name}} = obj
+			return nil
+			}
+
+			{{range $i, $field := $nested.Object.Fields}}
+				{{- /* Search methods */ -}}
+				{{if $field.Tag.IsSearchable}}
+					func (ar {{$struct.RepositoryName}}) FindBy{{$nested.ForeignKey.Name}}{{$field.Name}}({{$field.VarName}} {{$field.FullType}}) ([]*{{$struct.FullStructName}}, error) {
+					rows, err := ar.tx.Query(`SELECT {{range $i, $field := $struct.Fields -}}
+						{{if gt $i 0 -}}, {{end -}}
+						{{$struct.Table}}.{{$field.Tag.DbFieldName -}}
+					{{end}}
+					FROM {{$struct.Table}}, {{$nested.Object.Table}}
+					WHERE {{$struct.Table}}.{{$struct.PrimaryKey.Tag.DbFieldName}} = {{$nested.Object.Table}}.{{$nested.ForeignKey.Tag.DbFieldName}} and
+					{{if gt (len $struct.Active.SQLCondition) 0}}{{$struct.Active.SQLCondition}} and{{end}}
+					{{if gt (len $nested.Object.Active.SQLCondition) 0}}{{$nested.Object.Active.SQLCondition}} and{{end}}
+					{{$nested.Object.Table}}.{{$field.Tag.DbFieldName}}=$1;`, {{$field.VarName}})
+					if err != nil {
+					if err == sql.ErrNoRows {
+					return nil, nil
+					}
+					return nil, err
+					}
+					defer rows.Close()
+					return ar.serialize{{$struct.StructName}}s(rows)
+					}
+				{{- end -}}
+			{{- end}}
+
+
+			{{/* Search by group of fields methods */}}
+			{{- range $groupName, $groupFields := $nested.Object.SearchGroups -}}
+				func (ar {{$struct.RepositoryName}}) FindBy{{$nested.ForeignKey.Name}}{{$groupName}}({{range $i, $field := $groupFields -}}
+					{{if gt $i 0}}, {{end -}}
+					{{$field.VarName}} {{$field.Type -}}
+				{{end}}) ([]*{{$.Package}}.{{$struct.StructName -}}, error) {
+				rows, err := ar.tx.Query(`SELECT {{range $i, $field := $struct.Fields -}}
+					{{if gt $i 0}}, {{end -}}
+					{{$struct.Table}}.{{$field.Tag.DbFieldName -}}
+				{{end}}
+				FROM {{$struct.Table}}, {{$nested.Object.Table}}
+				WHERE {{$struct.Table}}.{{$struct.PrimaryKey.Tag.DbFieldName}} = {{$nested.Object.Table}}.{{$nested.ForeignKey.Tag.DbFieldName}} and
+				{{if gt (len $struct.Active.SQLCondition) 0}} {{$struct.Active.SQLCondition}} and {{end -}}
+				{{if gt (len $nested.Object.Active.SQLCondition) 0}}{{$nested.Object.Active.SQLCondition}} and{{end}}
+				{{range $i, $field := $groupFields -}}
+					{{if gt $i 0}} and {{end -}}
+					{{$nested.Object.Table}}.{{$field.Tag.DbFieldName}}={{printf "$%d" (inc $i) -}}
+				{{end -}};`, {{range $i, $field := $groupFields -}}
+					{{if gt $i 0}}, {{end -}}
+					{{$field.VarName -}}
+				{{end -}})
+				if err != nil {
+				if err == sql.ErrNoRows {
+				return nil, nil
+				}
+				return nil, err
+				}
+				defer rows.Close()
+				return ar.serialize{{$struct.StructName}}s(rows)
+				}
+			{{end -}}
+		{{- end}}
+	{{- end}}
 
 {{end -}}

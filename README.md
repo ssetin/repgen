@@ -7,38 +7,50 @@ Generates interface and implementation of the repository for data structure base
 	primary - mark field as primary key, generate Find method
 	searchable - generate Find method for that field
 	searchGroup - generate Find method for fields that were marked the same group
+	foreign - that field is foreign key in nested struct
+	    * nested struct should set "nested" ddd field to true. 
+	    * nested struct have no their own repository
 
 	Types:
 	*time.Time - generate Mark method that set field value to current timestamp
 	
 	Methods:
-	Method marked such json {"active":"\"deleted\" is null"} is used to determine is entity alive at domain, mock and sql levels.
+	Method marked such json {"active":"\"deleted\" is null"} (sql condition) is used to determine is entity alive at domain, mock and sql levels.
     Could be used various conditions with several fields. Such as "revoke", "deleted", etc
 
 ### Example
 
 ```go
-// gen:ddd {"table": "accounts"}
-type Account struct {
-	AccountId    int        `db:"field=id,primary"`
-	Phone        string     `db:"field=phone,searchable"`
-	Email        string     `db:"field=email,searchGroup=Requisite"`
-	PasswordHash string     `db:"field=passwordHash,searchGroup=Requisite"`
+package mypkg
+
+// gen:ddd {"table": "units"}
+type Unit struct {
+	Id           *int       `db:"field=id,primary"`
+	Type         string     `db:"field=type,searchable"`
+	Name         string     `db:"field=type,searchGroup=NameAndColor"`
+	Color        string     `db:"field=email,searchGroup=NameAndColor"`
 	Deleted      *time.Time `db:"field=deleted"`
+    
+	Details []*Detail  `db:"foreign=detailId"`
 }
 
-// gen:ddd {"active":"\"deleted\" is null"}
-func (a Account) IsActive() bool {
-	if a.Deleted == nil {
-		return true
-	}
-	return false
+// gen:ddd {"active":"\"units\".\"deleted\" is null"}
+func (a Unit) IsActive() bool {	
+	return a.Deleted == nil
 }
+
+// gen:ddd {"table": "details", "nested": true}
+type Detail struct {
+	Id            *int       `db:"field=detailId,primary"`
+	Type        string       `db:"field=type,searchable"`
+	Description string       `db:"field=name"`
+}
+
 ```
 ### Usage
 
 ```bash
     go build -o generator
-    ./generator [source file] [interface file] [implementation file] [mock implementation file]
-    goimports -w [implementation file] # format code and manage import section
+    ./generator [source path] [interface path] [implementation path] [mock implementation path]
+    goimports -w [path] # format code and manage import section
 ```

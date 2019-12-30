@@ -2,34 +2,63 @@
 package {{.Package}}
 
 {{range $structName, $struct := .Structs -}}
-type {{.RepositoryName}} interface {
+    type {{.RepositoryName}} interface {
+    {{/* Common methods */ -}}
     Create({{$struct.VarName}} *{{.StructName}}) ({{.PrimaryKey.Type}}, error)
     Update({{$struct.VarName}} *{{.StructName}}) error
 
     {{range $i, $field := .Fields -}}
-    {{if $field.Tag.IsPrimary -}}
-    FindBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) (*{{$struct.StructName}}, error)
-    {{if gt (len $struct.Active.SQLCondition) 0 -}}
-    FindRawBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) (*{{$struct.StructName}}, error)
-    {{end -}}
-    {{end -}}
-    {{if $field.Tag.IsSearchable -}}
-    FindBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) ([]*{{$struct.StructName}}, error)
-    {{end -}}
-    {{if and $field.IsPointer (eq $field.Type "time.Time") -}}
-        Mark{{$field.Name}}({{$struct.PrimaryKey.VarName}} {{$struct.PrimaryKey.Type}}) error
-    {{end -}}
-    {{end -}}
+
+        {{- /* Primary key methods */ -}}
+        {{if $field.Tag.IsPrimary -}}
+            FindBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) (*{{$struct.StructName}}, error)
+            {{if gt (len $struct.Active.SQLCondition) 0 -}}
+                FindRawBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) (*{{$struct.StructName}}, error)
+            {{end -}}
+        {{end -}}
+
+        {{- /* Search methods */ -}}
+        {{if $field.Tag.IsSearchable -}}
+            FindBy{{$field.Name}}({{$field.VarName}} {{$field.Type}}) ([]*{{$struct.StructName}}, error)
+        {{end -}}
+
+        {{- /* Mark methods */ -}}
+        {{if and $field.IsPointer (eq $field.Type "time.Time")}}
+            Mark{{$field.Name}}({{$struct.PrimaryKey.VarName}} {{$struct.PrimaryKey.Type}}) error
+        {{- end -}}
+    {{- end -}}
+
+    {{/* Search by group of fields methods */}}
     {{range $groupName, $groupFields := .SearchGroups -}}
-    FindBy{{$groupName}}({{range $i, $field := $groupFields -}}
-    {{if gt $i 0}}, {{end -}}
-    {{$field.VarName}} {{$field.Type -}}
-    {{end}}) ([]*{{$struct.StructName -}}, error)
-    {{end}}
-}
+        FindBy{{$groupName}}({{range $i, $field := $groupFields -}}
+            {{if gt $i 0}}, {{end -}}
+            {{$field.VarName}} {{$field.Type -}}
+        {{end}}) ([]*{{$struct.StructName -}}, error)
+    {{- end -}}
 
-type {{.RepositoryName}}Creator func(Transaction) ({{.RepositoryName}}, error)
+    {{- /* Nested objects*/ -}}
+    {{if .NestedObjects}}
+        // Nested objects
+        {{range $i, $obj := .NestedObjects -}}
+            Load{{$obj.ForeignKey.Name}}({{$struct.VarName}} *{{$structName}}) error
+            {{range $i, $field := $obj.Object.Fields}}
+                {{- /* Search methods */ -}}
+                {{if $field.Tag.IsSearchable}}
+                    FindBy{{$obj.ForeignKey.Name}}{{$field.Name}}({{$field.VarName}} {{$field.Type}}) ([]*{{$struct.StructName}}, error)
+                {{- end -}}
+            {{- end -}}
 
-{{end}}
+            {{/* Search by group of fields methods */}}
+            {{range $groupName, $groupFields := $obj.Object.SearchGroups -}}
+                FindBy{{$obj.ForeignKey.Name}}{{$groupName}}({{range $i, $field := $groupFields -}}
+                    {{if gt $i 0}}, {{end -}}
+                    {{$field.VarName}} {{$field.Type -}}
+                {{end}}) ([]*{{$struct.StructName}}, error)
+            {{end}}
+        {{- end}}
+    {{- end}}
+    }
 
+    type {{.RepositoryName}}Creator func(Transaction) ({{.RepositoryName}}, error)
 
+{{end -}}
